@@ -21,6 +21,19 @@ def create_system_router(api_contract_version: str, api_stability: str) -> APIRo
     """Create routes for health, dashboard, metrics and readiness."""
     router = APIRouter()
 
+    @router.get("/", tags=["system"], include_in_schema=False)
+    async def root_check():
+        """Return a minimal public response for platform port checks."""
+        return {
+            "status": "ok",
+            "service": system_config.project_name,
+        }
+
+    @router.head("/", tags=["system"], include_in_schema=False)
+    async def root_head_check():
+        """Return a minimal public response for platform port checks."""
+        return HTMLResponse(status_code=200)
+
     @router.get("/health", tags=["system"])
     async def health_check():
         """Return API health and version metadata."""

@@ -13,6 +13,7 @@ from src.config.settings import system_config
 RoleMap = Dict[str, Set[str]]
 
 ESSENTIAL_PUBLIC_PATHS = {
+    "/",
     "/health",
     "/api/version",
     "/favicon.ico",
