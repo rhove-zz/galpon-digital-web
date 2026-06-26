@@ -1,0 +1,5 @@
+-r base.txt
+
+# Optional vector search dependencies
+chromadb==0.4.24
+sentence-transformers==2.2.2

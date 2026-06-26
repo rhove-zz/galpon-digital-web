@@ -1,0 +1,4 @@
+-r vector.txt
+
+# Optional FAISS backend for VECTOR_DB_ENGINE=faiss
+faiss-cpu==1.7.4

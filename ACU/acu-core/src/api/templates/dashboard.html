@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ACU Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- Markdown & Code Highlighting -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div>
+        <h1>ACU Monitor</h1>
+        <div class="subtitle">Sesiones, auditoria de herramientas y memoria BrainCore</div>
+      </div>
+      <div class="toolbar">
+        <input id="apiKeyInput" type="password" placeholder="API key">
+        <button id="saveApiKey" class="secondary" type="button">Guardar clave</button>
+        <button id="refreshAll" type="button">Actualizar</button>
+        <button id="openDocs" class="secondary" type="button">OpenAPI</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="status-grid">
+      <div class="metric">
+        <label>Servicio</label>
+        <strong id="serviceStatus">...</strong>
+        <span id="serviceVersion">Version</span>
+      </div>
+      <div class="metric">
+        <label>Sesiones</label>
+        <strong id="sessionCount">0</strong>
+        <span id="sessionHint">Ultima carga</span>
+      </div>
+      <div class="metric">
+        <label>Herramientas</label>
+        <strong id="toolCount">0</strong>
+        <span id="toolHint">Auditoria reciente</span>
+      </div>
+      <div class="metric">
+        <label>HITL</label>
+        <strong id="hitlStatus">0</strong>
+        <span id="hitlHint">Aprobaciones pendientes</span>
+      </div>
+      <div class="metric">
+        <label>Scheduler</label>
+        <strong id="schedulerStatus">...</strong>
+        <span id="schedulerHint">Rutinas operativas</span>
+      </div>
+      <div class="metric">
+        <label>Webhooks</label>
+        <strong id="webhookStatusMetric">0</strong>
+        <span id="webhookHint">Eventos externos</span>
+      </div>
+      <div class="metric">
+        <label>BrainCore ADRs</label>
+        <strong id="decisionCount">0</strong>
+        <span id="decisionHint">Decisiones recientes</span>
+      </div>
+      <div class="metric">
+        <label>Fuentes BrainCore</label>
+        <strong id="sourceCount">0</strong>
+        <span id="sourceHint">Fuentes indexadas</span>
+      </div>
+      <div class="metric">
+        <label>Chunks BrainCore</label>
+        <strong id="chunkCount">0</strong>
+        <span id="chunkHint">Contexto ingerido</span>
+      </div>
+      <div class="metric">
+        <label>Dominios BrainCore</label>
+        <strong id="domainCount">0</strong>
+        <span id="domainHint">Dominios indexados</span>
+      </div>
+      <div class="metric">
+        <label>Acceso API</label>
+        <strong id="accessCount">0</strong>
+        <span id="accessHint">Auditoria reciente</span>
+      </div>
+      <div class="metric">
+        <label>Vector Store</label>
+        <strong id="vectorStatus">...</strong>
+        <span id="vectorHint">Estado vectorial</span>
+      </div>
+      <div class="metric">
+        <label>Seguridad API</label>
+        <strong id="securityStatus">...</strong>
+        <span id="securityHint">Politicas runtime</span>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="panel-stack">
+        <section id="pendingApprovalsSection" class="hitl-section" style="display: none;">
+          <div class="section-head">
+            <h2 style="color: #fbbf24;">⚠️ Aprobaciones Pendientes (Human-in-the-Loop)</h2>
+            <button id="refreshPendingTools" class="secondary" type="button">Refrescar</button>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Estado</th>
+                  <th>Herramienta</th>
+                  <th>Fecha</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody id="pendingToolsBody">
+                <tr><td colspan="5">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>Sesiones</h2>
+            <button id="refreshSessions" class="secondary" type="button">Recargar</button>
+          </div>
+          <div class="filters">
+            <input id="domainFilter" placeholder="domain">
+            <select id="statusFilter">
+              <option value="">estado</option>
+              <option value="active">active</option>
+              <option value="completed">completed</option>
+              <option value="failed">failed</option>
+            </select>
+            <select id="sessionLimit">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 34%">session_id</th>
+                  <th>domain</th>
+                  <th>estado</th>
+                  <th>iter</th>
+                  <th>inicio</th>
+                </tr>
+              </thead>
+              <tbody id="sessionsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>Auditoria de Herramientas</h2>
+            <button id="refreshTools" class="secondary" type="button">Recargar</button>
+          </div>
+          <div class="filters">
+            <input id="toolFilter" placeholder="tool_name">
+            <select id="toolSuccessFilter">
+              <option value="">exito</option>
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+            <select id="toolLimit">
+              <option value="20">20</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 28%">herramienta</th>
+                  <th>exito</th>
+                  <th>ms</th>
+                  <th>fecha</th>
+                </tr>
+              </thead>
+              <tbody id="toolsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>Acceso API</h2>
+            <button id="refreshAccess" class="secondary" type="button">Recargar</button>
+          </div>
+          <div class="filters">
+            <input id="accessPathFilter" placeholder="path">
+            <select id="accessAuthorizedFilter">
+              <option value="">autorizado</option>
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+            <select id="accessLimit">
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>metodo</th>
+                  <th style="width: 32%">path</th>
+                  <th>status</th>
+                  <th>roles</th>
+                  <th>fecha</th>
+                </tr>
+              </thead>
+              <tbody id="accessBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>Claves API</h2>
+            <button id="refreshApiKeys" class="secondary" type="button">Recargar</button>
+          </div>
+          <div class="action-row">
+            <input id="apiKeyName" placeholder="nombre">
+            <input id="apiKeyRoles" placeholder="roles: chat,monitoring">
+            <input id="apiKeyExpires" placeholder="expira YYYY-MM-DD HH:MM:SS">
+            <button id="createApiKey" type="button">Crear</button>
+            <div id="apiKeyCreateStatus" class="action-status"></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 26%">nombre</th>
+                  <th>roles</th>
+                  <th>estado</th>
+                  <th>huella</th>
+                  <th>accion</th>
+                </tr>
+              </thead>
+              <tbody id="apiKeysBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section style="border-color: rgba(59, 130, 246, 0.5);">
+          <div class="section-head" style="background: rgba(59, 130, 246, 0.1);">
+            <h2 style="color: #60a5fa;">🌐 Canales Webhook (Slack / Telegram)</h2>
+            <button id="refreshWebhooks" class="secondary" type="button">Refrescar</button>
+          </div>
+          <div class="action-row">
+            <select id="webhookChannel">
+              <option value="telegram">Telegram</option>
+              <option value="slack">Slack</option>
+            </select>
+            <input id="webhookToken" placeholder="Bot Token / Secret">
+            <button id="registerWebhook" type="button" class="primary">Registrar</button>
+            <div id="webhookStatus" class="action-status">Mocked: Activo</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Canal</th>
+                  <th>Estado</th>
+                  <th>Endpoint Asociado</th>
+                </tr>
+              </thead>
+              <tbody id="webhooksBody">
+                <tr>
+                  <td>Telegram</td>
+                  <td><span class="badge ok">Escuchando</span></td>
+                  <td><code>POST /webhooks/telegram</code></td>
+                </tr>
+                <tr>
+                  <td>Slack</td>
+                  <td><span class="badge ok">Escuchando</span></td>
+                  <td><code>POST /webhooks/slack</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="panel-stack">
+        <section class="chat-section">
+          <div class="section-head">
+            <h2>Chat ACU</h2>
+            <button id="sendChat" type="button" class="primary">Enviar</button>
+          </div>
+          <div class="chat-row">
+            <textarea id="chatMessage" placeholder="Escribe tu mensaje o instrucción..."></textarea>
+            <div class="chat-controls">
+              <input id="chatDomain" placeholder="domain" value="generic" title="Dominio / Namespace">
+              <select id="chatPersona" title="Perfil del Agente">
+                <option value="default">Default (Supervisor)</option>
+                <option value="arquitecto">Arquitecto</option>
+                <option value="analista_datos">Analista de Datos</option>
+                <option value="devsecops">DevSecOps</option>
+                <option value="investigador">Investigador Web</option>
+                <option value="soporte">Soporte Técnico</option>
+                <option value="consultor_erp">Consultor ERP</option>
+                <option value="integrador_apis">Integrador de APIs</option>
+              </select>
+            </div>
+            <div id="chatStatus" class="action-status"></div>
+          </div>
+          <div id="chatPanel" class="scroll-panel chat-container">
+            <div class="turn"><div class="empty">Bienvenido. ¿En qué te puedo ayudar hoy?</div></div>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>Contexto de Sesion</h2>
+            <button id="refreshContext" class="secondary" type="button">Recargar</button>
+          </div>
+          <div class="filters">
+            <input id="selectedSession" placeholder="session_id">
+          </div>
+          <div id="contextPanel" class="scroll-panel">
+            <div class="turn"><div class="empty">Selecciona una sesion para ver el contexto.</div></div>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>BrainCore ADRs</h2>
+            <button id="refreshDecisions" class="secondary" type="button">Recargar</button>
+          </div>
+          <div class="filters">
+            <input id="decisionSearch" placeholder="buscar decision">
+            <input id="decisionDomain" placeholder="domain">
+            <select id="decisionLimit">
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 38%">titulo</th>
+                  <th>domain</th>
+                  <th>estado</th>
+                </tr>
+              </thead>
+              <tbody id="decisionsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>Buscar BrainCore</h2>
+            <button id="runBrainSearch" type="button">Buscar</button>
+          </div>
+          <div class="search-row">
+            <input id="brainSearchQuery" placeholder="consulta">
+            <input id="brainSearchDomain" placeholder="domain">
+            <input id="brainSearchType" placeholder="source_type">
+            <select id="brainSearchTopK">
+              <option value="3">3</option>
+              <option value="5" selected>5</option>
+              <option value="10">10</option>
+            </select>
+          </div>
+          <div id="brainSearchResults" class="scroll-panel">
+            <div class="result"><div class="empty">Busca contexto ingerido en BrainCore.</div></div>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>Fuentes BrainCore</h2>
+            <button id="refreshSources" class="secondary" type="button">Recargar</button>
+          </div>
+          <div class="action-row">
+            <input id="ingestPath" placeholder="ruta local">
+            <input id="ingestDomain" placeholder="domain" value="acu">
+            <select id="ingestSourceType">
+              <option value="auto" selected>auto</option>
+              <option value="markdown">markdown</option>
+              <option value="code">code</option>
+              <option value="sql">sql</option>
+              <option value="config">config</option>
+              <option value="text">text</option>
+            </select>
+            <button id="ingestSource" type="button">Ingerir</button>
+            <div id="ingestStatus" class="action-status"></div>
+          </div>
+          <div class="filters">
+            <input id="sourceDomain" placeholder="domain">
+            <input id="sourceType" placeholder="source_type">
+            <select id="sourceStatus">
+              <option value="">estado</option>
+              <option value="indexed">indexed</option>
+              <option value="failed">failed</option>
+            </select>
+            <select id="sourceLimit">
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 42%">ruta</th>
+                  <th>tipo</th>
+                  <th>chunks</th>
+                  <th>estado</th>
+                  <th>accion</th>
+                </tr>
+              </thead>
+              <tbody id="sourcesBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/dashboard.js" defer></script>
+</body>
+</html>

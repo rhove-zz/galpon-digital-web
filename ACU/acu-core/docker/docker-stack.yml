@@ -1,0 +1,148 @@
+services:
+  # Base de Datos
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-acu_db}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+    networks:
+      - acu-network
+
+  # Redis para Estado y Rate Limiting
+  redis:
+    image: redis:7.2-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+    networks:
+      - acu-network
+
+  # Nodos LLM (Intensivos en Cómputo/GPU)
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      - OLLAMA_KEEP_ALIVE=5m
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    deploy:
+      replicas: 2
+      placement:
+        constraints: [node.labels.type == gpu]
+    networks:
+      - acu-network
+
+  # Nodos API (Escalabilidad Horizontal)
+  acu-agent:
+    image: ${ACU_IMAGE:-ghcr.io/revoxetech/acu-core:latest}
+    environment:
+      OLLAMA_HOST: http://ollama
+      OLLAMA_PORT: 11434
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-acu_db}
+      ACU_TELEMETRY_ENABLED: "true"
+      ACU_OTLP_ENDPOINT: "http://jaeger:4318/v1/traces"
+      ACU_REDIS_URL: "redis://redis:6379/0"
+      ACU_SCHEDULER_MODE: "disabled"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=5).raise_for_status()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+    networks:
+      - acu-network
+
+  # Trazabilidad (Opcional, en nodo de gestión)
+  acu-scheduler:
+    image: ${ACU_IMAGE:-ghcr.io/revoxetech/acu-core:latest}
+    command: ["python", "-m", "src.api.scheduler"]
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-acu_db}
+      ACU_REDIS_URL: "redis://redis:6379/0"
+      ACU_SCHEDULER_MODE: "worker"
+      ACU_LOG_RETENTION_DAYS: ${ACU_LOG_RETENTION_DAYS:-30}
+      ACU_AUDIT_RETENTION_DAYS: ${ACU_AUDIT_RETENTION_DAYS:-30}
+      ACU_CONVERSATION_RETENTION_DAYS: ${ACU_CONVERSATION_RETENTION_DAYS:-30}
+      ACU_BRAINCORE_SYNC_PATHS: ${ACU_BRAINCORE_SYNC_PATHS:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('mysql', 3306), 5).close(); socket.create_connection(('redis', 6379), 5).close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+    networks:
+      - acu-network
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    ports:
+      - "16686:16686"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:16686/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+    networks:
+      - acu-network
+
+volumes:
+  ollama_data:
+  mysql_data:
+
+networks:
+  acu-network:
+    driver: overlay

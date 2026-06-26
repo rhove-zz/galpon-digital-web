@@ -1,0 +1,160 @@
+services:
+  # Ollama LLM Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: acu-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=5m
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - acu-network
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: acu-mysql
+    ports:
+      - "${MYSQL_HOST_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-acu_db}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - acu-network
+
+  # ACU Agent Orchestrator
+  acu-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: acu-agent
+    depends_on:
+      ollama:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      OLLAMA_HOST: http://ollama
+      OLLAMA_PORT: 11434
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-acu_db}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ACU_TELEMETRY_ENABLED: "true"
+      ACU_OTLP_ENDPOINT: "http://jaeger:4318/v1/traces"
+      ACU_REDIS_URL: "redis://redis:6379/0"
+      ACU_SCHEDULER_MODE: "disabled"
+    volumes:
+      - ../logs:/app/logs
+      - ../data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=5).raise_for_status()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - acu-network
+    stdin_open: true
+    tty: true
+
+  # Dedicated Scheduler Worker
+  acu-scheduler:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: acu-scheduler
+    command: ["python", "-m", "src.api.scheduler"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-acu_db}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ACU_REDIS_URL: "redis://redis:6379/0"
+      ACU_SCHEDULER_MODE: "worker"
+      ACU_LOG_RETENTION_DAYS: ${ACU_LOG_RETENTION_DAYS:-30}
+      ACU_AUDIT_RETENTION_DAYS: ${ACU_AUDIT_RETENTION_DAYS:-30}
+      ACU_CONVERSATION_RETENTION_DAYS: ${ACU_CONVERSATION_RETENTION_DAYS:-30}
+      ACU_BRAINCORE_SYNC_PATHS: ${ACU_BRAINCORE_SYNC_PATHS:-}
+    volumes:
+      - ../logs:/app/logs
+      - ../data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('mysql', 3306), 5).close(); socket.create_connection(('redis', 6379), 5).close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - acu-network
+
+  # Jaeger for OpenTelemetry Distributed Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    container_name: acu-jaeger
+    ports:
+      - "16686:16686" # Web UI
+      - "4318:4318"   # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:16686/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - acu-network
+
+  # Redis for Rate Limiting and Session Management
+  redis:
+    image: redis:7.2-alpine
+    container_name: acu-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - acu-network
+
+volumes:
+  ollama_data:
+  mysql_data:
+
+networks:
+  acu-network:
+    driver: bridge

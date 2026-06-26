@@ -1,0 +1,202 @@
+name: ACU-CORE CI Pipeline
+
+on:
+  push:
+    branches: ["main", "develop"]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: ["main", "develop"]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/dev.txt
+
+      - name: Run Ruff Linter
+        run: ruff check src/ tests/ scripts/ main.py
+
+      - name: Run Ruff Format Check
+        run: ruff format --check src/ tests/ scripts/ main.py
+
+      - name: Run MyPy Type Checking
+        run: mypy src/ scripts/ main.py --ignore-missing-imports
+
+      - name: Run Pytest
+        run: pytest
+
+  mysql-integration:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: acu_db
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/dev.txt
+
+      - name: Setup database
+        run: |
+          mysql -h 127.0.0.1 -u root -proot acu_db < docker/init.sql
+          mysql -h 127.0.0.1 -u root -proot -e "CREATE USER IF NOT EXISTS 'acu_reader'@'%' IDENTIFIED BY 'acu_secure_read_only';"
+          mysql -h 127.0.0.1 -u root -proot -e "GRANT SELECT ON acu_db.* TO 'acu_reader'@'%';"
+          mysql -h 127.0.0.1 -u root -proot -e "FLUSH PRIVILEGES;"
+
+      - name: Run MySQL integration tests
+        env:
+          ACU_RUN_MYSQL_INTEGRATION: "true"
+          ACU_TEST_MYSQL_HOST: "127.0.0.1"
+          ACU_TEST_MYSQL_PORT: "3306"
+          ACU_TEST_MYSQL_DATABASE: "acu_db"
+          ACU_TEST_MYSQL_USER: "root"
+          ACU_TEST_MYSQL_PASSWORD: "root"
+          ACU_TEST_MYSQL_READ_ONLY_USER: "acu_reader"
+          ACU_TEST_MYSQL_READ_ONLY_PASSWORD: "acu_secure_read_only"
+        run: pytest -m integration_mysql
+
+  vector-integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install vector dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/dev.txt
+          pip install -r requirements/vector-faiss.txt
+
+      - name: Run VectorDB integration tests
+        env:
+          ACU_RUN_VECTOR_INTEGRATION: "true"
+        run: pytest -m integration_vector
+
+  docker-validation:
+    needs: [lint-and-test]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Docker Compose files
+        run: |
+          docker compose -f docker/docker-compose.yml config --quiet
+          docker compose -f docker/docker-compose.prod.yml config --quiet
+          docker compose -f docker/docker-stack.yml config --quiet
+
+      - name: Build production Docker image
+        run: |
+          docker build \
+            --file docker/Dockerfile \
+            --tag acu-core:ci \
+            .
+
+      - name: Smoke test API health and readiness gate
+        run: |
+          docker run --detach --name acu-core-smoke \
+            --publish 8000:8000 \
+            --env ACU_API_AUTH_REQUIRED="true" \
+            --env ACU_API_KEYS="smoke-monitor=monitoring" \
+            --env ACU_API_RATE_LIMIT_REQUESTS="120" \
+            --env ACU_API_MAX_REQUEST_BODY_BYTES="1048576" \
+            --env ACU_API_CORS_ORIGINS="https://panel.example.com" \
+            --env ACU_REDIS_URL="" \
+            --env ACU_SCHEDULER_MODE="disabled" \
+            acu-core:ci
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/health; then
+              python scripts/readiness_gate.py \
+                --url http://127.0.0.1:8000/system/readiness \
+                --api-key smoke-monitor \
+                --retries 10 \
+                --delay 2
+              exit $?
+            fi
+            sleep 2
+          done
+          docker logs acu-core-smoke
+          exit 1
+
+      - name: Cleanup smoke container
+        if: always()
+        run: docker rm -f acu-core-smoke || true
+
+  build-and-push:
+    needs: [lint-and-test, mysql-integration, vector-integration, docker-validation]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

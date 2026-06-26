@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+venv/
+.venv/
+
+# Environment files
+.env
+
+# Logs
+logs/
+
+# Test artifacts
+.pytest_cache/
+tests/.tmp_docs/
+pytest-cache-files-*/
+
+# Local tooling
+.mypy_cache/
+.ruff_cache/
