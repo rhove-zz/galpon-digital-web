@@ -1,5 +1,6 @@
 """FastAPI application entrypoint for ACU."""
 
+import os
 import time
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 from contextlib import asynccontextmanager
@@ -394,6 +395,9 @@ def _audit_api_access(
     duration_ms: float,
 ) -> None:
     """Persist API access audit without interrupting the request flow."""
+    if _skip_access_audit_for_read_only_staging():
+        return
+
     try:
         connector = request.app.state.access_audit_provider()
         if not hasattr(connector, "log_api_access"):
@@ -411,6 +415,21 @@ def _audit_api_access(
         )
     except Exception:
         return
+
+
+def _skip_access_audit_for_read_only_staging() -> bool:
+    """Avoid blocking staging responses on optional write-audit storage."""
+    explicit_read_only = os.getenv("ACU_READ_ONLY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    return bool(
+        system_config.is_secure_runtime
+        and explicit_read_only
+        and not system_config.write_tools_enabled
+    )
 
 
 def _elapsed_ms(started_at: float) -> float:
