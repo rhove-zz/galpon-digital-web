@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 
 from src.api.agent_runtime import get_initialized_agent
 from src.api.schemas import ChatRequest, ChatResponse, ToolExecutionResponse
-from src.config.settings import system_config
+from src.config.settings import ollama_config, system_config
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -21,6 +21,10 @@ async def chat(payload: ChatRequest, request: Request):
     user_message = payload.message.strip()
     if not user_message:
         raise HTTPException(status_code=422, detail="message no puede estar vacio")
+
+    if _should_short_circuit_to_fallback():
+        logger.warning("ACU chat fallback activated: model runtime disabled")
+        return _read_only_fallback_response(payload)
 
     try:
         agent = await get_initialized_agent(
@@ -133,6 +137,26 @@ def _read_only_fallback_enabled() -> bool:
         and (explicit_read_only or not system_config.write_tools_enabled)
         and not system_config.external_tools_enabled
     )
+
+
+def _should_short_circuit_to_fallback() -> bool:
+    """Avoid slow model initialization when staging has no AI runtime enabled."""
+    if not _read_only_fallback_enabled():
+        return False
+
+    gemini_enabled = os.getenv("GEMINI_ENABLED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    local_ollama_host = str(ollama_config.host or "").strip().lower() in {
+        "http://localhost",
+        "http://127.0.0.1",
+        "localhost",
+        "127.0.0.1",
+    }
+    return bool(not gemini_enabled and system_config.is_secure_runtime and local_ollama_host)
 
 
 def _read_only_fallback_response(payload: ChatRequest) -> ChatResponse:
