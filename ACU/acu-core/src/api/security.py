@@ -15,6 +15,7 @@ RoleMap = Dict[str, Set[str]]
 ESSENTIAL_PUBLIC_PATHS = {
     "/",
     "/health",
+    "/system/readiness",
     "/api/version",
     "/favicon.ico",
 }
