@@ -1,4 +1,4 @@
-# 📚 Referencias - Recursos Externos y Documentación
+﻿# 📚 Referencias - Recursos Externos y Documentación
 
 Compilación de documentación externa, estándares, patrones y recursos útiles.
 
@@ -20,7 +20,7 @@ Compilación de documentación externa, estándares, patrones y recursos útiles
 ---
 
 ### Clean Architecture
-**Documento**: [clean-architecture.md](clean-architecture.md) (TODO)  
+**Documento**: [clean-architecture.md](clean-architecture.md) (referencia planificada)
 **Tipo**: Principios de diseño  
 **Aplicación**: Estructura de módulos  
 
@@ -33,7 +33,7 @@ Compilación de documentación externa, estándares, patrones y recursos útiles
 ---
 
 ### SOLID Principles
-**Documento**: [solid-principles.md](solid-principles.md) (TODO)  
+**Documento**: [solid-principles.md](solid-principles.md) (referencia planificada)
 **Tipo**: Principios OOP  
 
 **Aplicación en ACU**:
@@ -46,7 +46,7 @@ Compilación de documentación externa, estándares, patrones y recursos útiles
 ---
 
 ### Domain-Driven Design (DDD)
-**Documento**: [ddd-concepts.md](ddd-concepts.md) (TODO)  
+**Documento**: [ddd-concepts.md](ddd-concepts.md) (referencia planificada)
 **Tipo**: Metodología de diseño  
 
 **Aplicación**: Lenguaje ubicuo alrededor de ReAct, Herramientas, Memoria
@@ -91,7 +91,7 @@ Compilación de documentación externa, estándares, patrones y recursos útiles
 
 ### ChromaDB - Vector Database
 **Enlace**: https://www.trychroma.com/  
-**Documento**: [chromadb-docs.md](chromadb-docs.md) (TODO)  
+**Documento**: [chromadb-docs.md](chromadb-docs.md) (referencia planificada)
 
 **Uso planeado**:
 - Búsqueda semántica de documentos
@@ -102,7 +102,7 @@ Compilación de documentación externa, estándares, patrones y recursos útiles
 
 ### Docker & Docker Compose
 **Enlace**: https://www.docker.com/  
-**Documento**: [docker-docs.md](docker-docs.md) (TODO)  
+**Documento**: [docker-docs.md](docker-docs.md) (referencia planificada)
 
 **Uso en ACU**:
 - Containerización de servicios
@@ -114,7 +114,7 @@ Compilación de documentación externa, estándares, patrones y recursos útiles
 
 ### Pydantic v2
 **Enlace**: https://docs.pydantic.dev/  
-**Documento**: [pydantic-docs.md](pydantic-docs.md) (TODO)  
+**Documento**: [pydantic-docs.md](pydantic-docs.md) (referencia planificada)
 
 **Uso en ACU**:
 - Validación de datos
@@ -159,7 +159,7 @@ Compilación de documentación externa, estándares, patrones y recursos útiles
 
 ### Pytest
 **Enlace**: https://docs.pytest.org/  
-**Documento**: [pytest-guide.md](pytest-guide.md) (TODO)  
+**Documento**: [pytest-guide.md](pytest-guide.md) (referencia planificada)
 
 **Uso planeado en Fase 2**:
 - Unit tests
@@ -199,7 +199,7 @@ Compilación de documentación externa, estándares, patrones y recursos útiles
 ## 🔗 Tutoriales y Guías Internas
 
 ### Python Async/Await
-**Documento**: [python-async-guide.md](python-async-guide.md) (TODO)  
+**Documento**: [python-async-guide.md](python-async-guide.md) (referencia planificada)
 
 Cómo usar `asyncio` en ACU:
 - async def / await
@@ -208,12 +208,12 @@ Cómo usar `asyncio` en ACU:
 - Event loops
 
 ### SQL Query Optimization
-**Documento**: [sql-optimization.md](sql-optimization.md) (TODO)  
+**Documento**: [sql-optimization.md](sql-optimization.md) (referencia planificada)
 
 Best practices para queries SELECT en ACU.
 
 ### LLM Prompting
-**Documento**: [llm-prompting-guide.md](llm-prompting-guide.md) (TODO)  
+**Documento**: [llm-prompting-guide.md](llm-prompting-guide.md) (referencia planificada)
 
 Técnicas para mejores prompts:
 - Few-shot learning
@@ -232,7 +232,7 @@ Técnicas para mejores prompts:
 - Coverage.py (test coverage)
 
 ### Logging Best Practices
-**Documento**: [logging-guide.md](logging-guide.md) (TODO)  
+**Documento**: [logging-guide.md](logging-guide.md) (referencia planificada)
 
 ---
 

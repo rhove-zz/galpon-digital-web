@@ -390,7 +390,8 @@ BrainCore puede usar `VECTOR_DB_ENGINE=chromadb` o `VECTOR_DB_ENGINE=faiss`. Par
 - `braincore_write` permite registrar decisiones, ingerir fuentes, eliminar fuentes y tambien leer BrainCore.
 - `monitoring` permite sesiones, contexto, auditoria de herramientas, auditoria API y metricas de sistema.
 - HITL (`/tools/pending/*`) queda reservado a `admin`.
-- `/health`, `/dashboard` y OpenAPI quedan publicos; el dashboard envia la clave guardada localmente si se configura.
+- `/`, `HEAD /`, `/health` y `/system/readiness` quedan publicos con respuesta minima/sanitizada.
+- `/dashboard`, `/api/version` y OpenAPI requieren API key cuando la autenticacion esta activa; solo pueden quedar publicos con `ACU_ALLOW_OPERATIONAL_PUBLIC_ROUTES=true` en desarrollo local controlado.
 - El dashboard muestra mensajes claros para errores de auth, payload, rate limit y validacion.
 - La auditoria de acceso guarda huella de clave, roles, ruta, estado HTTP, IP y user-agent; no guarda la clave completa.
 - Runbook de produccion: [wiki/04-decisiones/seguridad-operativa.md](wiki/04-decisiones/seguridad-operativa.md).

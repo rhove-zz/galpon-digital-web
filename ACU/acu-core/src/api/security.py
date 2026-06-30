@@ -16,7 +16,6 @@ ESSENTIAL_PUBLIC_PATHS = {
     "/",
     "/health",
     "/system/readiness",
-    "/api/version",
     "/favicon.ico",
 }
 
@@ -34,7 +33,7 @@ ROLE_BRAINCORE_WRITE = "braincore_write"
 ROLE_MONITORING = "monitoring"
 
 
-def is_public_path(path: str, allow_operational_public: bool = True) -> bool:
+def is_public_path(path: str, allow_operational_public: bool = False) -> bool:
     """Return True when the route must remain public."""
     if path in ESSENTIAL_PUBLIC_PATHS:
         return True

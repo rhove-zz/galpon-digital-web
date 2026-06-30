@@ -216,8 +216,9 @@ def create_app(
         auth_enabled = bool(request.app.state.api_keys) or bool(
             request.app.state.api_auth_required
         )
-        allow_operational_public = not bool(
-            getattr(request.app.state, "secure_runtime", False)
+        allow_operational_public = bool(
+            system_config.allow_operational_public_routes
+            and not getattr(request.app.state, "secure_runtime", False)
         )
         if (
             _is_public_path(

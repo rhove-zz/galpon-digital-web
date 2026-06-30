@@ -19,6 +19,7 @@ ACU_API_RATE_LIMIT_REQUESTS=120
 ACU_API_RATE_LIMIT_WINDOW_SECONDS=60
 ACU_API_MAX_REQUEST_BODY_BYTES=1048576
 ACU_API_CORS_ORIGINS=https://panel.example.com
+ACU_ALLOW_OPERATIONAL_PUBLIC_ROUTES=False
 ACU_TELEGRAM_WEBHOOK_SECRET=<secret>
 ACU_SLACK_SIGNING_SECRET=<secret>
 ACU_SLACK_MAX_SKEW_SECONDS=300
@@ -34,15 +35,22 @@ Estas rutas permanecen publicas por contrato de aplicacion:
 
 | Ruta | Motivo | Riesgo operativo |
 |------|--------|------------------|
+| `GET /` y `HEAD /` | Root minimo para platform checks | No debe exponer datos sensibles |
 | `GET /health` | Healthcheck Docker, balanceadores y smoke tests | No debe exponer datos sensibles |
-| `GET /api/version` | Versionado funcional y compatibilidad de clientes | Solo debe exponer metadata de contrato |
-| `GET /dashboard` | Consola embebida estatica | La data sigue protegida por API keys si auth esta activa |
-| `GET /docs` | OpenAPI interactivo | Revisar exposicion en redes publicas |
-| `GET /openapi.json` | Contrato API | Puede revelar superficie funcional |
-| `GET /redoc` | Documentacion API | Puede revelar superficie funcional |
-| `GET /static/*` | Assets del dashboard | Sin datos operativos |
+| `GET /system/readiness` | Readiness sanitizado para smoke y SRE | No debe exponer datos internos |
 
-Si el despliegue queda publicado en internet, proteger estas rutas con proxy, VPN, allowlist de red o autenticacion externa.
+Estas rutas operativas requieren API key cuando la autenticacion esta activa:
+
+| Ruta | Uso | Control |
+|------|-----|---------|
+| `GET /api/version` | Versionado funcional y compatibilidad de clientes | API key o opt-in local explicito |
+| `GET /dashboard` | Consola embebida estatica | API key o opt-in local explicito |
+| `GET /docs` | OpenAPI interactivo | API key o opt-in local explicito |
+| `GET /openapi.json` | Contrato API | API key o opt-in local explicito |
+| `GET /redoc` | Documentacion API | API key o opt-in local explicito |
+| `GET /static/*` | Assets del dashboard | API key o opt-in local explicito |
+
+`ACU_ALLOW_OPERATIONAL_PUBLIC_ROUTES=True` solo debe usarse en desarrollo local controlado. No habilitarlo en staging o produccion.
 
 ## Matriz De Roles
 
@@ -136,6 +144,7 @@ Antes de exponer ACU:
 - [ ] `ACU_API_MAX_REQUEST_BODY_BYTES` configurado.
 - [ ] CORS restringido a origenes conocidos.
 - [ ] Webhooks con secretos y allowlists.
-- [ ] Dashboard/docs protegidos por capa externa si la red es publica.
+- [ ] `ACU_ALLOW_OPERATIONAL_PUBLIC_ROUTES=False` en staging/produccion.
+- [ ] Dashboard/docs/OpenAPI protegidos por API key si la red es publica.
 - [ ] Auditoria disponible en MySQL.
 - [ ] Smoke test de `/health`, `scripts/readiness_gate.py` y prueba de acceso rechazado sin key.

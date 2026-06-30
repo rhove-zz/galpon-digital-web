@@ -106,6 +106,10 @@ class SystemConfig:
     api_auth_required: bool = _default_api_auth_required()
     require_api_key: bool = _get_bool("ACU_REQUIRE_API_KEY", True)
     allow_insecure_local: bool = _get_bool("ACU_ALLOW_INSECURE_LOCAL", False)
+    allow_operational_public_routes: bool = _get_bool(
+        "ACU_ALLOW_OPERATIONAL_PUBLIC_ROUTES",
+        False,
+    )
     safe_mode: bool = _get_bool("ACU_SAFE_MODE", True)
     tools_enabled: bool = _get_bool("ACU_TOOLS_ENABLED", True)
     read_only_tools_enabled: bool = _get_bool("ACU_READ_ONLY_TOOLS_ENABLED", True)

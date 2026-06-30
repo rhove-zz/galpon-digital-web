@@ -32,8 +32,9 @@ def test_health_endpoint_returns_service_metadata():
 def test_api_version_endpoint_and_openapi_publish_contract_metadata():
     client = TestClient(create_app(api_key="secret-key"))
 
-    version_response = client.get("/api/version")
-    openapi_response = client.get("/openapi.json")
+    headers = {"X-ACU-API-Key": "secret-key"}
+    version_response = client.get("/api/version", headers=headers)
+    openapi_response = client.get("/openapi.json", headers=headers)
 
     assert version_response.status_code == 200
     assert version_response.headers["x-acu-api-version"] == "v1"
@@ -333,7 +334,9 @@ def test_api_key_accepts_bearer_header_and_keeps_public_routes_open():
     )
 
     assert client.get("/health").status_code == 200
-    assert client.get("/dashboard").status_code == 200
+    assert client.get("/dashboard").status_code == 401
+    assert client.get("/api/version").status_code == 401
+    assert client.get("/openapi.json").status_code == 401
 
     response = client.post(
         "/chat",
@@ -343,7 +346,7 @@ def test_api_key_accepts_bearer_header_and_keeps_public_routes_open():
 
     assert response.status_code == 200
     assert response.json()["session_id"] == "test-session"
-    assert len(access_audit.entries) == 1
+    assert len(access_audit.entries) == 4
 
 
 def test_secure_runtime_requires_api_key_configuration(monkeypatch):
@@ -379,8 +382,29 @@ def test_secure_runtime_protects_dashboard_docs_and_openapi(monkeypatch):
     assert client.get("/dashboard").status_code == 401
     assert client.get("/openapi.json").status_code == 401
     assert client.get("/docs").status_code == 401
+    assert client.get("/static/dashboard.css").status_code == 401
     accepted = client.get("/dashboard", headers={"X-ACU-API-Key": "secure-key"})
     assert accepted.status_code == 200
+
+
+def test_operational_public_routes_require_explicit_local_opt_in(monkeypatch):
+    monkeypatch.setattr(system_config, "environment", "development")
+    monkeypatch.setattr(system_config, "allow_operational_public_routes", False)
+    client = TestClient(create_app(api_key="secret-key"))
+
+    assert client.get("/health").status_code == 200
+    assert client.get("/system/readiness").status_code == 200
+    assert client.get("/dashboard").status_code == 401
+    assert client.get("/docs").status_code == 401
+    assert client.get("/openapi.json").status_code == 401
+    assert client.get("/api/version").status_code == 401
+
+    monkeypatch.setattr(system_config, "allow_operational_public_routes", True)
+    local_client = TestClient(create_app(api_key="secret-key"))
+
+    assert local_client.get("/dashboard").status_code == 200
+    assert local_client.get("/docs").status_code == 200
+    assert local_client.get("/openapi.json").status_code == 200
 
 
 def test_role_limited_key_allows_chat_but_forbids_monitoring():
@@ -500,7 +524,7 @@ def test_system_readiness_reports_ready_for_security_baseline(monkeypatch):
     assert {check["status"] for check in payload["checks"]} == {"pass"}
 
 
-def test_system_readiness_requires_monitoring_role():
+def test_system_readiness_remains_public_for_platform_smoke():
     access_audit = FakeAccessAudit()
     client = TestClient(
         create_app(
@@ -513,18 +537,21 @@ def test_system_readiness_requires_monitoring_role():
         )
     )
 
-    rejected = client.get(
+    public_response = client.get("/system/readiness")
+    chat_key_response = client.get(
         "/system/readiness",
         headers={"X-ACU-API-Key": "chat-key"},
     )
-    accepted = client.get(
+    monitoring_key_response = client.get(
         "/system/readiness",
         headers={"X-ACU-API-Key": "monitor-key"},
     )
 
-    assert rejected.status_code == 403
-    assert accepted.status_code == 200
-    assert accepted.json()["api_version"] == "v1"
+    assert public_response.status_code == 200
+    assert chat_key_response.status_code == 200
+    assert monitoring_key_response.status_code == 200
+    assert public_response.json()["api_version"] == "v1"
+    assert access_audit.entries == []
 
 
 def test_hitl_pending_endpoints_require_admin_role():
@@ -691,7 +718,7 @@ def test_admin_can_create_list_and_revoke_managed_api_keys():
         json={
             "name": "chat client",
             "roles": ["chat"],
-            "expires_at": "2026-06-01 00:00:00",
+            "expires_at": "2999-06-01 00:00:00",
         },
         headers={"X-ACU-API-Key": "admin-secret"},
     )
@@ -709,7 +736,7 @@ def test_admin_can_create_list_and_revoke_managed_api_keys():
     assert create_response.json()["roles"] == ["chat"]
     assert key_manager.created_payload["name"] == "chat client"
     assert key_manager.created_payload["key_hash"]
-    assert key_manager.created_payload["expires_at"] == "2026-06-01 00:00:00"
+    assert key_manager.created_payload["expires_at"] == "2999-06-01 00:00:00"
     assert list_response.status_code == 200
     assert list_response.json()[0]["key_fingerprint"] == "abc123"
     assert revoke_response.status_code == 200

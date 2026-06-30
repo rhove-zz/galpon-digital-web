@@ -31,6 +31,28 @@ def test_required_roles_and_role_inheritance():
     assert not security.has_required_role({"chat"}, {"monitoring"})
 
 
+def test_public_path_defaults_to_minimal_platform_surface():
+    assert security.is_public_path("/")
+    assert security.is_public_path("/health")
+    assert security.is_public_path("/system/readiness")
+    assert not security.is_public_path("/api/version")
+    assert not security.is_public_path("/dashboard")
+    assert not security.is_public_path("/docs")
+    assert not security.is_public_path("/docs/oauth2-redirect")
+    assert not security.is_public_path("/openapi.json")
+    assert not security.is_public_path("/redoc")
+    assert not security.is_public_path("/static/dashboard.css")
+
+    assert security.is_public_path(
+        "/dashboard",
+        allow_operational_public=True,
+    )
+    assert security.is_public_path(
+        "/static/dashboard.css",
+        allow_operational_public=True,
+    )
+
+
 def test_extract_api_key_supports_header_and_bearer():
     header_request = SimpleNamespace(
         headers={"x-acu-api-key": "header-key", "authorization": "Bearer bearer-key"}
