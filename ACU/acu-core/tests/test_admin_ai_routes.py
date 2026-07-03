@@ -4,7 +4,11 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from src.api.app import create_app
-from src.api.routes.admin_ai import SYNTHETIC_GEMINI_SMOKE_PROMPT
+from src.api.routes.admin_ai import (
+    DIRECT_SMOKE_RATE_LIMIT_MAX_REQUESTS,
+    SYNTHETIC_GEMINI_SMOKE_PROMPT,
+    reset_admin_ai_smoke_monitoring,
+)
 from src.llm.runtime_flags import get_gemini_runtime_status, reset_gemini_runtime_override
 
 
@@ -37,6 +41,7 @@ class SlowGeminiModel:
 
 def _client(monkeypatch, model=None):
     reset_gemini_runtime_override()
+    reset_admin_ai_smoke_monitoring()
     monkeypatch.setenv("ACU_ENV", "staging")
     monkeypatch.setenv("GEMINI_ENABLED", "false")
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
@@ -83,10 +88,69 @@ def test_direct_smoke_uses_synthetic_prompt_and_bypasses_agent(monkeypatch):
     assert body["tools_enabled"] is False
     assert body["acu_writes_enabled"] is False
     assert body["secret_values"] == "not_returned"
+    assert body["response_preview"] == "response_received"
+    assert model.text not in str(body)
     assert SYNTHETIC_GEMINI_SMOKE_PROMPT in model.calls[0]["prompt"]
     assert "test-key-not-real" not in model.calls[0]["prompt"]
     assert model.calls[0]["request_options"]["timeout"] == 8
     assert get_gemini_runtime_status()["effective_enabled"] is False
+
+    reset_gemini_runtime_override()
+
+
+def test_direct_smoke_status_is_admin_only_and_sanitized(monkeypatch):
+    client = _client(monkeypatch, FakeGeminiModel())
+
+    unauthorized = client.get("/admin/ai/gemini/smoke/status")
+    assert unauthorized.status_code == 401
+
+    client.post(
+        "/admin/ai/gemini/smoke",
+        headers={"X-ACU-API-Key": "admin-secret"},
+    )
+    response = client.get(
+        "/admin/ai/gemini/smoke/status",
+        headers={"X-ACU-API-Key": "admin-secret"},
+    )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["scope"] == "GEMINI_ADMIN_DIRECT_SMOKE_ONLY"
+    assert body["admin_only"] is True
+    assert body["secret_values"] == "not_returned"
+    assert body["audit"]["total_attempts"] == 1
+    assert body["audit"]["success_count"] == 1
+    assert body["audit"]["last_actor_fingerprint"] != "admin-secret"
+    assert "admin-secret" not in str(body)
+    assert "test-key-not-real" not in str(body)
+
+    reset_gemini_runtime_override()
+
+
+def test_direct_smoke_rate_limit_blocks_without_leaving_toggle_enabled(monkeypatch):
+    client = _client(monkeypatch, FakeGeminiModel())
+
+    for _ in range(DIRECT_SMOKE_RATE_LIMIT_MAX_REQUESTS):
+        response = client.post(
+            "/admin/ai/gemini/smoke",
+            headers={"X-ACU-API-Key": "admin-secret"},
+        )
+        assert response.status_code == 200
+
+    limited = client.post(
+        "/admin/ai/gemini/smoke",
+        headers={"X-ACU-API-Key": "admin-secret"},
+    )
+
+    assert limited.status_code == 429
+    assert limited.json()["detail"]["secret_values"] == "not_returned"
+    assert get_gemini_runtime_status()["effective_enabled"] is False
+
+    status = client.get(
+        "/admin/ai/gemini/smoke/status",
+        headers={"X-ACU-API-Key": "admin-secret"},
+    )
+    assert status.json()["audit"]["rate_limited_count"] == 1
 
     reset_gemini_runtime_override()
 
