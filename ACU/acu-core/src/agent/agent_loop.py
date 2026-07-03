@@ -9,7 +9,7 @@ import json
 
 from src.agent.prompting import get_prompt_builder
 from src.config.settings import agent_config
-from src.llm.ollama_client import get_ollama_client
+from src.llm.provider import get_llm_client as get_ollama_client
 from src.memory.mysql_manager import get_db_connector
 from src.tools.tools_manager import get_tools_manager
 from src.utils.logger import log
