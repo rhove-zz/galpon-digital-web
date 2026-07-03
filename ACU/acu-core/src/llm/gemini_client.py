@@ -18,10 +18,14 @@ from src.utils.logger import log
 class GeminiClient:
     """Adapter with the same surface used by the ACU agent loop."""
 
-    def __init__(self, model_client: Any = None):
+    def __init__(self, model_client: Any = None, timeout_seconds: Optional[int] = None):
         self.enabled = is_gemini_runtime_enabled()
         self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
-        self.timeout_seconds = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "30"))
+        self.timeout_seconds = (
+            int(timeout_seconds)
+            if timeout_seconds is not None
+            else int(os.getenv("GEMINI_TIMEOUT_SECONDS", "30"))
+        )
         self.max_tokens = int(os.getenv("GEMINI_MAX_TOKENS", "1024"))
         self.api_key_configured = bool(os.getenv("GEMINI_API_KEY", "").strip())
         self._model_client = model_client

@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.api.dashboard import STATIC_DIR
+from src.api.routes.admin_ai import router as admin_ai_router
 from src.api.routes.api_keys import router as api_keys_router
 from src.api.routes.ai_runtime import router as ai_runtime_router
 from src.api.routes.braincore import router as braincore_router
@@ -286,6 +287,7 @@ def create_app(
     api.include_router(api_keys_router)
     api.include_router(tools_router)
     api.include_router(ai_runtime_router)
+    api.include_router(admin_ai_router)
 
     return api
 
