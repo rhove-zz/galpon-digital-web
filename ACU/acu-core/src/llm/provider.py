@@ -4,10 +4,7 @@ import os
 
 from src.llm.gemini_client import GeminiClient
 from src.llm.ollama_client import OllamaClient
-
-
-def _enabled(name: str) -> bool:
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+from src.llm.runtime_flags import is_gemini_runtime_enabled
 
 
 def get_llm_client():
@@ -17,7 +14,6 @@ def get_llm_client():
     GEMINI_ENABLED is true and ACU_LLM_PROVIDER is empty or explicitly gemini.
     """
     provider = os.getenv("ACU_LLM_PROVIDER", "").strip().lower()
-    if _enabled("GEMINI_ENABLED") and provider in {"", "gemini"}:
+    if is_gemini_runtime_enabled() and provider in {"", "gemini"}:
         return GeminiClient()
     return OllamaClient()
-

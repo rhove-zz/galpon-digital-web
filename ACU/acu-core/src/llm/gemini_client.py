@@ -11,18 +11,15 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.config.settings import agent_config
+from src.llm.runtime_flags import is_gemini_runtime_enabled
 from src.utils.logger import log
-
-
-def _env_enabled(name: str, default: bool = False) -> bool:
-    return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
 
 class GeminiClient:
     """Adapter with the same surface used by the ACU agent loop."""
 
     def __init__(self, model_client: Any = None):
-        self.enabled = _env_enabled("GEMINI_ENABLED", False)
+        self.enabled = is_gemini_runtime_enabled()
         self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
         self.timeout_seconds = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "30"))
         self.max_tokens = int(os.getenv("GEMINI_MAX_TOKENS", "1024"))
@@ -161,4 +158,3 @@ class GeminiClient:
             "User:\n"
             f"{user_message}"
         )
-

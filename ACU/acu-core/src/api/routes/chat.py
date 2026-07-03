@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from src.api.agent_runtime import get_initialized_agent
 from src.api.schemas import ChatRequest, ChatResponse, ToolExecutionResponse
 from src.config.settings import ollama_config, system_config
+from src.llm.runtime_flags import is_gemini_runtime_enabled
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -144,12 +145,7 @@ def _should_short_circuit_to_fallback() -> bool:
     if not _read_only_fallback_enabled():
         return False
 
-    gemini_enabled = os.getenv("GEMINI_ENABLED", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    gemini_enabled = is_gemini_runtime_enabled()
     local_ollama_host = str(ollama_config.host or "").strip().lower() in {
         "http://localhost",
         "http://127.0.0.1",
