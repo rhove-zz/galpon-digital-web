@@ -14,6 +14,7 @@ from src.api.schemas import (
     SystemReadinessResponse,
 )
 from src.config.settings import system_config
+from src.llm.gemini_client import GeminiClient
 from src.memory.redis_manager import redis_manager
 
 
@@ -127,6 +128,38 @@ def create_system_router(api_contract_version: str, api_stability: str) -> APIRo
                     }
                 ],
             }
+
+    @router.post("/system/gemini-smoke", tags=["monitoring"])
+    async def gemini_smoke():
+        """Run a direct Gemini adapter smoke without ReAct, tools or writes."""
+        client = GeminiClient()
+        result: Dict[str, Any] = {
+            "gemini_enabled": bool(client.enabled),
+            "api_key_configured": bool(client.api_key_configured),
+            "model": client.model,
+            "timeout_seconds": client.timeout_seconds,
+            "tools_executed": 0,
+            "writes_executed": 0,
+            "response_text_returned": False,
+        }
+        if not client.enabled or not client.api_key_configured:
+            result["smoke_status"] = "disabled_or_missing_secret"
+            return result
+
+        response = client.generate_response(
+            system_prompt=(
+                "You are running a production readiness smoke. "
+                "Answer with a short synthetic confirmation only. "
+                "Do not use tools. Do not write data."
+            ),
+            user_message="R55 synthetic direct Gemini smoke. No tools. No writes.",
+            conversation_history=[],
+            temperature=0.0,
+            top_p=0.8,
+        )
+        result["smoke_status"] = "ok" if response else "failed"
+        result["response_present"] = bool(response)
+        return result
 
     return router
 
