@@ -11,6 +11,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.config.settings import agent_config
+from src.llm.cost_guard import evaluate_ai_request, record_ai_request
 from src.llm.runtime_flags import is_gemini_runtime_enabled
 from src.utils.logger import log
 
@@ -41,6 +42,7 @@ class GeminiClient:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
+        skip_cost_guard: bool = False,
     ) -> Optional[str]:
         """Generate a response through Gemini, or fail closed with None."""
         if not self.enabled:
@@ -53,6 +55,13 @@ class GeminiClient:
         client = self._get_model_client()
         if client is None:
             return None
+
+        if not skip_cost_guard:
+            cost_guard = evaluate_ai_request(user_message, self.max_tokens)
+            if not cost_guard.allowed:
+                log.warning("Gemini generation blocked safely by AI cost guard")
+                return None
+            record_ai_request(cost_guard)
 
         prompt = self._build_prompt(system_prompt, user_message, conversation_history)
         generation_config = {
@@ -90,6 +99,7 @@ class GeminiClient:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
+        skip_cost_guard: bool = False,
     ):
         """Yield a single generated response chunk for compatibility."""
         response = self.generate_response(
@@ -98,6 +108,7 @@ class GeminiClient:
             conversation_history=conversation_history,
             temperature=temperature,
             top_p=top_p,
+            skip_cost_guard=skip_cost_guard,
         )
         if response:
             yield response

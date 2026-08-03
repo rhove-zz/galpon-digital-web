@@ -5,6 +5,7 @@ Constructs dynamic prompts with injected database schema and tool definitions.
 
 from typing import Optional
 
+from src.config.settings import system_config
 from src.memory.mysql_manager import MySQLConnector
 from src.utils.logger import log
 
@@ -204,6 +205,9 @@ Cuando invoques una herramienta, responde asi:
             )
 
             system_prompt = template.replace("{db_schema}", db_schema_text)
+            policy_note = self._tool_policy_note()
+            if policy_note:
+                system_prompt = f"{system_prompt}\n\n{policy_note}"
 
             log.debug(f"System prompt (Persona: {persona}) construido exitosamente")
             return system_prompt
@@ -213,6 +217,26 @@ Cuando invoques una herramienta, responde asi:
                 "{db_schema}",
                 "(Error al cargar schema)",
             )
+
+    @staticmethod
+    def _tool_policy_note() -> str:
+        """Return runtime tool policy instructions for the model."""
+        allowed_tools = [
+            item.strip()
+            for item in str(getattr(system_config, "allowed_tools", "") or "").split(",")
+            if item.strip()
+        ]
+        if not allowed_tools:
+            return ""
+        allowed = ", ".join(allowed_tools)
+        return (
+            "## Politica Runtime de Herramientas\n"
+            f"- Herramientas permitidas por allowlist: {allowed}.\n"
+            "- No invoques SQL, web, API REST, filesystem, Python, escritura, "
+            "delegacion ni memoria de escritura si no aparecen en la allowlist.\n"
+            "- Si la allowlist no alcanza, responde con la informacion disponible "
+            "sin inventar ni ejecutar acciones."
+        )
 
     @staticmethod
     def format_tool_example() -> str:

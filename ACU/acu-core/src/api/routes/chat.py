@@ -16,6 +16,7 @@ from src.llm.runtime_flags import is_gemini_runtime_enabled
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger(__name__)
+R62_MINIMAL_READ_ONLY_TOOL_ALLOWLIST = {"buscar_contexto_braincore"}
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -169,12 +170,39 @@ def _should_use_direct_read_only_gemini() -> bool:
     return bool(
         _read_only_fallback_enabled()
         and is_gemini_runtime_enabled()
+        and not _minimal_read_only_tools_runtime_enabled()
         and not system_config.web_tools_enabled
         and not system_config.filesystem_write_enabled
         and not system_config.write_tools_enabled
         and not system_config.external_tools_enabled
         and not system_config.api_rest_enabled
     )
+
+
+def _minimal_read_only_tools_runtime_enabled() -> bool:
+    """Return True only for the R62 one-tool read-only ReAct path."""
+    allowed_tools = _configured_tool_names(getattr(system_config, "allowed_tools", ""))
+    return bool(
+        _read_only_fallback_enabled()
+        and is_gemini_runtime_enabled()
+        and bool(getattr(system_config, "tools_enabled", False))
+        and bool(getattr(system_config, "read_only_tools_enabled", False))
+        and allowed_tools == R62_MINIMAL_READ_ONLY_TOOL_ALLOWLIST
+        and not system_config.web_tools_enabled
+        and not system_config.filesystem_write_enabled
+        and not system_config.write_tools_enabled
+        and not system_config.external_tools_enabled
+        and not system_config.api_rest_enabled
+    )
+
+
+def _configured_tool_names(raw_value: str) -> set[str]:
+    """Parse comma-separated tool names into a normalized set."""
+    return {
+        item.strip()
+        for item in str(raw_value or "").split(",")
+        if item.strip()
+    }
 
 
 def _direct_read_only_gemini_response(payload: ChatRequest) -> ChatResponse | None:
@@ -200,6 +228,7 @@ def _direct_read_only_gemini_response(payload: ChatRequest) -> ChatResponse | No
         conversation_history=[],
         temperature=0.2,
         top_p=0.8,
+        skip_cost_guard=True,
     )
     if not response_text:
         return None

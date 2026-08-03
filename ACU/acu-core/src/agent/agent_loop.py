@@ -8,7 +8,7 @@ from uuid import uuid4
 import json
 
 from src.agent.prompting import get_prompt_builder
-from src.config.settings import agent_config
+from src.config.settings import agent_config, system_config
 from src.llm.provider import get_llm_client as get_ollama_client
 from src.memory.mysql_manager import get_db_connector
 from src.tools.tools_manager import get_tools_manager
@@ -443,10 +443,7 @@ Basandote en tu analisis:{plan_context}
 
 Cual es tu siguiente accion?
 
-Si necesitas informacion:
-1. PRIMERO, consulta tu memoria evolutiva si hay incertidumbre
-2. Luego, elige entre ejecutar SQL, buscar documentos, buscar contexto BrainCore, o registrar lecciones
-3. Si tienes suficiente informacion, responde al usuario
+{self._tool_policy_instruction()}
 
 Responde en formato JSON con la herramienta a invocar, o "CONCLUDE" si has terminado.
 """
@@ -621,6 +618,28 @@ corresponda.
             {"role": msg.role, "content": msg.content}
             for msg in self.conversation_history[-6:]
         ]
+
+    def _tool_policy_instruction(self) -> str:
+        """Return a concise tool instruction bound by runtime allowlist."""
+        allowed_tools = [
+            item.strip()
+            for item in str(getattr(system_config, "allowed_tools", "") or "").split(",")
+            if item.strip()
+        ]
+        if allowed_tools:
+            allowed = ", ".join(allowed_tools)
+            return (
+                "Si necesitas informacion, solo puedes invocar herramientas incluidas "
+                f"en esta allowlist: {allowed}. No invoques SQL, web, API REST, "
+                "filesystem, Python, escritura, delegacion ni memoria de escritura. "
+                "Si la allowlist no alcanza, responde con CONCLUDE y explica la limitacion."
+            )
+        return (
+            "Si necesitas informacion:\n"
+            "1. PRIMERO, consulta tu memoria evolutiva si hay incertidumbre\n"
+            "2. Luego, elige entre ejecutar SQL, buscar documentos, buscar contexto BrainCore, o registrar lecciones\n"
+            "3. Si tienes suficiente informacion, responde al usuario"
+        )
 
     async def shutdown(self):
         """Gracefully shutdown agent and cleanup resources."""
