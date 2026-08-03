@@ -1,5 +1,6 @@
 """Chat API routes."""
 
+import asyncio
 import logging
 import os
 from typing import Any, List
@@ -278,12 +279,12 @@ async def _direct_braincore_read_only_tool_response(
             },
             reasoning="R62C direct read-only BrainCore context retrieval",
         )
-        tool_result = await tools_manager.execute_tool(
-            tool_call,
+        tool_result = await _execute_braincore_tool_with_timeout(
+            tools_manager=tools_manager,
+            tool_call=tool_call,
             session_id=session_id,
-            require_approval=False,
-            agent_domain=payload.domain.strip() or "production",
-            agent_persona=payload.persona.strip() or "default",
+            domain=payload.domain.strip() or "production",
+            persona=payload.persona.strip() or "default",
         )
         serialized_tool = ToolExecutionResponse(
             tool=_serialize_tool_name(getattr(tool_result, "tool", "")),
@@ -334,6 +335,42 @@ async def _direct_braincore_read_only_tool_response(
         iterations=1,
         tool_calls=[serialized_tool],
     )
+
+
+async def _execute_braincore_tool_with_timeout(
+    tools_manager: Any,
+    tool_call: ToolCall,
+    session_id: str,
+    domain: str,
+    persona: str,
+) -> Any:
+    """Run the read-only BrainCore tool off-loop with a bounded timeout."""
+
+    def _run_tool_sync() -> Any:
+        return asyncio.run(
+            tools_manager.execute_tool(
+                tool_call,
+                session_id=session_id,
+                require_approval=False,
+                agent_domain=domain,
+                agent_persona=persona,
+            )
+        )
+
+    return await asyncio.wait_for(
+        asyncio.to_thread(_run_tool_sync),
+        timeout=_read_only_tool_timeout_seconds(),
+    )
+
+
+def _read_only_tool_timeout_seconds() -> float:
+    """Return a bounded timeout for the experimental read-only tool path."""
+    raw_value = os.getenv("ACU_READ_ONLY_TOOL_TIMEOUT_SECONDS", "8")
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        value = 8.0
+    return min(max(value, 1.0), 20.0)
 
 
 def _format_braincore_context(tool: ToolExecutionResponse) -> str:
