@@ -52,6 +52,11 @@ class DirectBrainCoreToolManager:
         )
 
 
+class ExplodingDirectBrainCoreToolManager:
+    async def execute_tool(self, *_args, **_kwargs):
+        raise RuntimeError("braincore unavailable")
+
+
 def _chat_config(**overrides):
     defaults = {
         "is_secure_runtime": True,
@@ -300,3 +305,33 @@ def test_direct_braincore_path_executes_only_allowed_tool_and_returns_context(mo
     assert recorded["count"] == 1
     assert gemini.kwargs["skip_cost_guard"] is True
     assert "Informacion operacional sintetica" in gemini.kwargs["user_message"]
+
+
+def test_direct_braincore_path_fails_closed_when_tool_runtime_raises(monkeypatch):
+    gemini = DirectBrainCoreGeminiClient()
+    monkeypatch.setattr(chat_routes, "GeminiClient", lambda: gemini)
+    monkeypatch.setattr(
+        chat_routes,
+        "get_tools_manager",
+        lambda: ExplodingDirectBrainCoreToolManager(),
+    )
+    monkeypatch.setattr(
+        chat_routes,
+        "evaluate_ai_request",
+        lambda *_args, **_kwargs: SimpleNamespace(allowed=True),
+    )
+    monkeypatch.setattr(chat_routes, "record_ai_request", lambda *_args, **_kwargs: None)
+
+    import asyncio
+
+    response = asyncio.run(
+        chat_routes._direct_braincore_read_only_tool_response(
+            ChatRequest(message="consulta sintetica", domain="production")
+        )
+    )
+
+    assert response is not None
+    assert response.tool_calls[0].tool == "buscar_contexto_braincore"
+    assert response.tool_calls[0].success is False
+    assert response.tool_calls[0].error == "BrainCore read-only tool failed safely"
+    assert "BrainCore no devolvio contexto util" in gemini.kwargs["user_message"]

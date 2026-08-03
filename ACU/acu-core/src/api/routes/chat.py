@@ -267,30 +267,43 @@ async def _direct_braincore_read_only_tool_response(
     record_ai_request(cost_guard)
 
     session_id = payload.session_id or f"braincore-direct:{payload.domain.strip() or 'generic'}"
-    tools_manager = get_tools_manager()
-    tool_call = ToolCall(
-        tool=ToolType.BRAINCORE_SEARCH,
-        parameters={
-            "consulta": payload.message.strip(),
-            "domain": payload.domain.strip() or "production",
-            "top_k": 3,
-        },
-        reasoning="R62C direct read-only BrainCore context retrieval",
-    )
-    tool_result = await tools_manager.execute_tool(
-        tool_call,
-        session_id=session_id,
-        require_approval=False,
-        agent_domain=payload.domain.strip() or "production",
-        agent_persona=payload.persona.strip() or "default",
-    )
-    serialized_tool = ToolExecutionResponse(
-        tool=_serialize_tool_name(getattr(tool_result, "tool", "")),
-        success=bool(getattr(tool_result, "success", False)),
-        result=getattr(tool_result, "result", None),
-        error=getattr(tool_result, "error", None),
-        execution_time_ms=float(getattr(tool_result, "execution_time_ms", 0.0)),
-    )
+    try:
+        tools_manager = get_tools_manager()
+        tool_call = ToolCall(
+            tool=ToolType.BRAINCORE_SEARCH,
+            parameters={
+                "consulta": payload.message.strip(),
+                "domain": payload.domain.strip() or "production",
+                "top_k": 3,
+            },
+            reasoning="R62C direct read-only BrainCore context retrieval",
+        )
+        tool_result = await tools_manager.execute_tool(
+            tool_call,
+            session_id=session_id,
+            require_approval=False,
+            agent_domain=payload.domain.strip() or "production",
+            agent_persona=payload.persona.strip() or "default",
+        )
+        serialized_tool = ToolExecutionResponse(
+            tool=_serialize_tool_name(getattr(tool_result, "tool", "")),
+            success=bool(getattr(tool_result, "success", False)),
+            result=getattr(tool_result, "result", None),
+            error=getattr(tool_result, "error", None),
+            execution_time_ms=float(getattr(tool_result, "execution_time_ms", 0.0)),
+        )
+    except Exception as exc:
+        logger.warning(
+            "ACU direct BrainCore read-only tool failed safely: %s",
+            exc.__class__.__name__,
+        )
+        serialized_tool = ToolExecutionResponse(
+            tool=ToolType.BRAINCORE_SEARCH.value,
+            success=False,
+            result=None,
+            error="BrainCore read-only tool failed safely",
+            execution_time_ms=0.0,
+        )
     context = _format_braincore_context(serialized_tool)
     response_text = client.generate_response(
         system_prompt=(
