@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from src.api.agent_runtime import get_initialized_agent
 from src.api.schemas import ChatRequest, ChatResponse, ToolExecutionResponse
 from src.config.settings import ollama_config, system_config
+from src.llm.gemini_client import GeminiClient
 from src.llm.runtime_flags import is_gemini_runtime_enabled
 
 router = APIRouter(tags=["chat"])
@@ -22,6 +23,13 @@ async def chat(payload: ChatRequest, request: Request):
     user_message = payload.message.strip()
     if not user_message:
         raise HTTPException(status_code=422, detail="message no puede estar vacio")
+
+    if _should_use_direct_read_only_gemini():
+        response = _direct_read_only_gemini_response(payload)
+        if response is not None:
+            return response
+        logger.warning("ACU chat fallback activated: direct Gemini unavailable")
+        return _read_only_fallback_response(payload)
 
     if _should_short_circuit_to_fallback():
         logger.warning("ACU chat fallback activated: model runtime disabled")
@@ -153,6 +161,48 @@ def _should_short_circuit_to_fallback() -> bool:
         "127.0.0.1",
     }
     return bool(not gemini_enabled and system_config.is_secure_runtime and local_ollama_host)
+
+
+def _should_use_direct_read_only_gemini() -> bool:
+    """Route chat through Gemini directly when action-capable runtime is frozen."""
+    return bool(
+        _read_only_fallback_enabled()
+        and is_gemini_runtime_enabled()
+        and not system_config.web_tools_enabled
+        and not system_config.filesystem_write_enabled
+        and not system_config.write_tools_enabled
+        and not system_config.external_tools_enabled
+        and not system_config.api_rest_enabled
+    )
+
+
+def _direct_read_only_gemini_response(payload: ChatRequest) -> ChatResponse | None:
+    """Generate a chat response without initializing ReAct, tools or writes."""
+    client = GeminiClient()
+    if not client.enabled or not client.api_key_configured:
+        return None
+
+    response_text = client.generate_response(
+        system_prompt=(
+            "Eres ACU en modo produccion read-only. Responde de forma breve, "
+            "util y segura. No uses herramientas. No escribas datos. "
+            "No ejecutes acciones externas."
+        ),
+        user_message=payload.message.strip(),
+        conversation_history=[],
+        temperature=0.2,
+        top_p=0.8,
+    )
+    if not response_text:
+        return None
+
+    session_id = payload.session_id or f"gemini-direct:{payload.domain.strip() or 'generic'}"
+    return ChatResponse(
+        session_id=session_id,
+        response=response_text,
+        iterations=1,
+        tool_calls=[],
+    )
 
 
 def _read_only_fallback_response(payload: ChatRequest) -> ChatResponse:
