@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api import webhooks
-from src.api.app import create_app
+from src.api.app import create_app, _skip_access_audit_for_read_only_staging
 from src.config.settings import system_config
 from src.memory.redis_manager import redis_manager
 from src.utils.schemas import ToolResult, ToolType
@@ -552,6 +552,24 @@ def test_system_readiness_remains_public_for_platform_smoke():
     assert monitoring_key_response.status_code == 200
     assert public_response.json()["api_version"] == "v1"
     assert access_audit.entries == []
+
+
+def test_access_audit_skips_when_secure_production_read_only(monkeypatch):
+    monkeypatch.delenv("ACU_READ_ONLY", raising=False)
+    monkeypatch.setattr(system_config, "environment", "production")
+    monkeypatch.setattr(system_config, "production_read_only", True)
+    monkeypatch.setattr(system_config, "write_tools_enabled", False)
+
+    assert _skip_access_audit_for_read_only_staging() is True
+
+
+def test_access_audit_does_not_skip_when_write_tools_enabled(monkeypatch):
+    monkeypatch.setenv("ACU_READ_ONLY", "true")
+    monkeypatch.setattr(system_config, "environment", "production")
+    monkeypatch.setattr(system_config, "production_read_only", True)
+    monkeypatch.setattr(system_config, "write_tools_enabled", True)
+
+    assert _skip_access_audit_for_read_only_staging() is False
 
 
 def test_hitl_pending_endpoints_require_admin_role():

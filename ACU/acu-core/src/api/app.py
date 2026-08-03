@@ -423,16 +423,17 @@ def _audit_api_access(
 
 
 def _skip_access_audit_for_read_only_staging() -> bool:
-    """Avoid blocking staging responses on optional write-audit storage."""
+    """Avoid blocking read-only secure responses on optional write-audit storage."""
     explicit_read_only = os.getenv("ACU_READ_ONLY", "").strip().lower() in {
         "1",
         "true",
         "yes",
         "on",
     }
+    production_read_only = bool(getattr(system_config, "production_read_only", False))
     return bool(
         system_config.is_secure_runtime
-        and explicit_read_only
+        and (explicit_read_only or production_read_only)
         and not system_config.write_tools_enabled
     )
 
