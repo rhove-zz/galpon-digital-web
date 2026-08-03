@@ -119,6 +119,7 @@ class SystemConfig:
         False,
     )
     safe_mode: bool = _get_bool("ACU_SAFE_MODE", True)
+    production_read_only: bool = _get_bool("ACU_PRODUCTION_READ_ONLY", False)
     tools_enabled: bool = _get_bool("ACU_TOOLS_ENABLED", True)
     read_only_tools_enabled: bool = _get_bool("ACU_READ_ONLY_TOOLS_ENABLED", True)
     write_tools_enabled: bool = _get_bool("ACU_WRITE_TOOLS_ENABLED", False)

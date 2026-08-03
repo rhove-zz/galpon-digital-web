@@ -93,11 +93,15 @@ class ACUAgent:
             self.conversation_history.append(
                 Message(role="system", content=prompt_content)
             )
-            self.session_persisted = self.write_connector.start_agent_session(
-                session_id=self.session_id,
-                domain=self.domain,
-            )
-            if not self.session_persisted:
+            if system_config.production_read_only:
+                self.session_persisted = False
+                log.info("Sesion del agente no persistida por ACU_PRODUCTION_READ_ONLY")
+            else:
+                self.session_persisted = self.write_connector.start_agent_session(
+                    session_id=self.session_id,
+                    domain=self.domain,
+                )
+            if not self.session_persisted and not system_config.production_read_only:
                 log.warning("La sesion del agente no pudo persistirse")
 
         log.info("Inicializacion completada exitosamente")
@@ -352,6 +356,8 @@ Proporciona una respuesta clara, concisa y accionable al usuario.
         steps_used: int,
     ) -> None:
         """Persist one conversation turn without blocking agent response."""
+        if system_config.production_read_only:
+            return
         if not self.session_persisted:
             return
 
@@ -644,7 +650,7 @@ corresponda.
     async def shutdown(self):
         """Gracefully shutdown agent and cleanup resources."""
         log.info("Apagando ACU Agent...")
-        if self.session_persisted:
+        if self.session_persisted and not system_config.production_read_only:
             self.write_connector.end_agent_session(
                 session_id=self.session_id,
                 total_iterations=self.total_iterations,

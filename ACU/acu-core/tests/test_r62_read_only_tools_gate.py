@@ -3,10 +3,13 @@
 from types import SimpleNamespace
 
 from src.api.routes import chat as chat_routes
+from src.agent import agent_loop
+from src.agent.agent_loop import ACUAgent
 from src.llm import gemini_client
 from src.llm.gemini_client import GeminiClient
 from src.tools import tools_manager
 from src.tools.tools_manager import ToolsManager
+from src.utils.schemas import ToolCall
 from src.utils.schemas import ToolType
 
 
@@ -47,6 +50,7 @@ def _tools_config(**overrides):
         "safe_mode": True,
         "audit_full_payloads": False,
         "audit_redact_secrets": True,
+        "production_read_only": False,
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -133,3 +137,89 @@ def test_gemini_client_cost_guard_blocks_react_model_call(monkeypatch):
         )
         is None
     )
+
+
+def test_tools_manager_uses_read_only_braincore_and_skips_audit_in_production_read_only(monkeypatch):
+    monkeypatch.setattr(
+        tools_manager,
+        "system_config",
+        _tools_config(production_read_only=True),
+    )
+    manager = object.__new__(ToolsManager)
+    manager.write_connector = SimpleNamespace(
+        log_tool_execution=lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("write audit must be skipped in production read-only")
+        )
+    )
+
+    manager._audit_tool_execution(
+        tool_call=ToolCall(
+            tool=ToolType.BRAINCORE_SEARCH,
+            parameters={"consulta": "contexto sintetico"},
+            reasoning="test",
+        ),
+        raw_result={"success": True, "data": []},
+        execution_time_ms=1.0,
+        success=True,
+    )
+
+
+class FakeReadConnector:
+    def connect(self):
+        return True
+
+    def get_database_schema(self):
+        return None
+
+    def disconnect(self):
+        return None
+
+
+class ExplodingWriteConnector:
+    def start_agent_session(self, **_kwargs):
+        raise AssertionError("agent session must not be persisted in production read-only")
+
+    def log_conversation_context(self, **_kwargs):
+        raise AssertionError("conversation context must not be persisted in production read-only")
+
+    def end_agent_session(self, **_kwargs):
+        raise AssertionError("agent session end must not be persisted in production read-only")
+
+    def disconnect(self):
+        return None
+
+
+class ConnectedModel:
+    def check_connection(self):
+        return True
+
+
+class FakePromptBuilder:
+    def build_system_prompt(self, persona="default"):
+        return f"system {persona}"
+
+
+def test_agent_initialize_skips_session_write_in_production_read_only(monkeypatch):
+    monkeypatch.setattr(
+        agent_loop,
+        "system_config",
+        SimpleNamespace(production_read_only=True),
+    )
+    agent = object.__new__(ACUAgent)
+    agent.domain = "production"
+    agent.persona = "default"
+    agent.db_connector = FakeReadConnector()
+    agent.write_connector = ExplodingWriteConnector()
+    agent.ollama_client = ConnectedModel()
+    agent.prompt_builder = FakePromptBuilder()
+    agent.conversation_history = []
+    agent.system_prompt = None
+    agent.session_id = "r62-test"
+    agent.session_persisted = False
+
+    import asyncio
+
+    assert asyncio.run(agent.initialize()) is True
+    assert agent.session_persisted is False
+
+    agent._persist_conversation_turn("query", "answer", 1)

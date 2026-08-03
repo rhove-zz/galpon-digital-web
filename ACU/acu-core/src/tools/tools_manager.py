@@ -17,7 +17,7 @@ import requests
 from bs4 import BeautifulSoup
 import markdownify
 
-from src.braincore.manager import get_braincore_manager
+from src.braincore.manager import BrainCoreManager, get_braincore_manager
 from src.config.settings import system_config, vectordb_config
 from src.memory.mysql_manager import get_db_connector
 from src.memory.redis_manager import redis_manager
@@ -87,7 +87,11 @@ class ToolsManager:
         """Initialize tools manager."""
         self.db_connector = get_db_connector(use_read_only=True)
         self.write_connector = get_db_connector(use_read_only=False)
-        self.braincore_manager = get_braincore_manager()
+        self.braincore_manager = (
+            BrainCoreManager(db_connector=self.db_connector)
+            if system_config.production_read_only
+            else get_braincore_manager()
+        )
         self.execution_log: List[ToolResult] = []
         self.project_root = Path(__file__).resolve().parents[2]
         self._document_index: List[Dict[str, str]] = []
@@ -318,6 +322,9 @@ class ToolsManager:
         success: bool,
     ) -> None:
         """Persist tool execution metadata without affecting tool flow."""
+        if system_config.production_read_only:
+            log.debug("Auditoria de herramienta omitida por ACU_PRODUCTION_READ_ONLY")
+            return
         try:
             audited = self.write_connector.log_tool_execution(
                 tool_name=str(tool_call.tool.value),
