@@ -26,6 +26,14 @@ def _get_int(name: str, default: int = 0) -> int:
         return default
 
 
+def _get_float(name: str, default: float = 0.0) -> float:
+    """Return a float environment value with a safe fallback."""
+    try:
+        return float(os.getenv(name, str(default)) or default)
+    except (TypeError, ValueError):
+        return default
+
+
 def _runtime_environment() -> str:
     """Return the normalized ACU runtime environment."""
     return os.getenv("ACU_ENV", os.getenv("APP_ENV", "development")).strip().lower()
@@ -146,6 +154,20 @@ class SystemConfig:
         "ACU_API_RATE_LIMIT_WINDOW_SECONDS",
         60,
     )
+    ai_cost_guard_enabled: bool = _get_bool("ACU_AI_COST_GUARD_ENABLED", False)
+    ai_cost_guard_mode: str = os.getenv("ACU_AI_COST_GUARD_MODE", "block").strip().lower()
+    ai_daily_request_limit: int = _get_int("ACU_AI_DAILY_REQUEST_LIMIT", 0)
+    ai_input_token_limit: int = _get_int("ACU_AI_ESTIMATED_INPUT_TOKEN_LIMIT", 0)
+    ai_output_token_limit: int = _get_int("ACU_AI_ESTIMATED_OUTPUT_TOKEN_LIMIT", 0)
+    ai_daily_cost_limit_usd: float = _get_float("ACU_DAILY_COST_LIMIT_USD", 0.0)
+    ai_estimated_cost_per_1k_tokens_usd: float = _get_float(
+        "ACU_AI_ESTIMATED_COST_PER_1K_TOKENS_USD",
+        0.0,
+    )
+    ai_cost_guard_state_file: str = os.getenv(
+        "ACU_AI_COST_GUARD_STATE_FILE",
+        "",
+    ).strip()
     log_retention_days: int = _get_int("ACU_LOG_RETENTION_DAYS", 30)
     audit_retention_days: int = _get_int(
         "ACU_AUDIT_RETENTION_DAYS",

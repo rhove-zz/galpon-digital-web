@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from src.api.agent_runtime import get_initialized_agent
 from src.api.schemas import ChatRequest, ChatResponse, ToolExecutionResponse
 from src.config.settings import ollama_config, system_config
+from src.llm.cost_guard import evaluate_ai_request, record_ai_request
 from src.llm.gemini_client import GeminiClient
 from src.llm.runtime_flags import is_gemini_runtime_enabled
 
@@ -182,6 +183,13 @@ def _direct_read_only_gemini_response(payload: ChatRequest) -> ChatResponse | No
     if not client.enabled or not client.api_key_configured:
         return None
 
+    max_output_tokens = int(getattr(client, "max_tokens", os.getenv("GEMINI_MAX_TOKENS", "1024")))
+    cost_guard = evaluate_ai_request(payload.message.strip(), max_output_tokens)
+    if not cost_guard.allowed:
+        logger.warning("ACU chat blocked before Gemini by AI cost guard")
+        return _cost_guard_blocked_response(payload)
+    record_ai_request(cost_guard)
+
     response_text = client.generate_response(
         system_prompt=(
             "Eres ACU en modo produccion read-only. Responde de forma breve, "
@@ -201,6 +209,21 @@ def _direct_read_only_gemini_response(payload: ChatRequest) -> ChatResponse | No
         session_id=session_id,
         response=response_text,
         iterations=1,
+        tool_calls=[],
+    )
+
+
+def _cost_guard_blocked_response(payload: ChatRequest) -> ChatResponse:
+    """Return a safe response when the AI cost guard blocks model execution."""
+    session_id = payload.session_id or f"guard-blocked:{payload.domain.strip() or 'generic'}"
+    return ChatResponse(
+        session_id=session_id,
+        response=(
+            "ACU esta disponible en modo seguro de solo lectura. "
+            "La solicitud fue detenida por controles operativos de IA. "
+            "No se ejecutaron herramientas, escrituras ni acciones externas."
+        ),
+        iterations=0,
         tool_calls=[],
     )
 
