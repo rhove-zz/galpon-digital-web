@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 from src.api.routes import chat as chat_routes
+from src.api.schemas import ChatRequest
 from src.agent import agent_loop
 from src.agent.agent_loop import ACUAgent
 from src.llm import gemini_client
@@ -16,6 +17,39 @@ from src.utils.schemas import ToolType
 class ExplodingGeminiModel:
     def generate_content(self, *_args, **_kwargs):
         raise AssertionError("Gemini must not be called when guard blocks")
+
+
+class DirectBrainCoreGeminiClient:
+    enabled = True
+    api_key_configured = True
+    max_tokens = 128
+
+    def __init__(self):
+        self.kwargs = None
+
+    def generate_response(self, **kwargs):
+        self.kwargs = kwargs
+        return "respuesta con contexto braincore"
+
+
+class DirectBrainCoreToolManager:
+    def __init__(self):
+        self.calls = []
+
+    async def execute_tool(self, tool_call, **kwargs):
+        self.calls.append((tool_call, kwargs))
+        return SimpleNamespace(
+            tool=ToolType.BRAINCORE_SEARCH,
+            success=True,
+            result=[
+                {
+                    "title": "Contexto sintetico",
+                    "content": "Informacion operacional sintetica sobre ACU.",
+                }
+            ],
+            error=None,
+            execution_time_ms=1.0,
+        )
 
 
 def _chat_config(**overrides):
@@ -223,3 +257,46 @@ def test_agent_initialize_skips_session_write_in_production_read_only(monkeypatc
     assert agent.session_persisted is False
 
     agent._persist_conversation_turn("query", "answer", 1)
+
+
+def test_direct_braincore_path_executes_only_allowed_tool_and_returns_context(monkeypatch):
+    recorded = {"count": 0}
+    tool_manager = DirectBrainCoreToolManager()
+    gemini = DirectBrainCoreGeminiClient()
+    monkeypatch.setattr(chat_routes, "GeminiClient", lambda: gemini)
+    monkeypatch.setattr(chat_routes, "get_tools_manager", lambda: tool_manager)
+    monkeypatch.setattr(
+        chat_routes,
+        "evaluate_ai_request",
+        lambda *_args, **_kwargs: SimpleNamespace(allowed=True),
+    )
+    monkeypatch.setattr(
+        chat_routes,
+        "record_ai_request",
+        lambda *_args, **_kwargs: recorded.__setitem__("count", recorded["count"] + 1),
+    )
+
+    import asyncio
+
+    response = asyncio.run(
+        chat_routes._direct_braincore_read_only_tool_response(
+            ChatRequest(
+                message="consulta sintetica",
+                domain="production",
+                persona="default",
+                session_id="r62c-test",
+            )
+        )
+    )
+
+    assert response is not None
+    assert response.session_id == "r62c-test"
+    assert response.response == "respuesta con contexto braincore"
+    assert response.iterations == 1
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].tool == "buscar_contexto_braincore"
+    assert response.tool_calls[0].success is True
+    assert tool_manager.calls[0][0].tool == ToolType.BRAINCORE_SEARCH
+    assert recorded["count"] == 1
+    assert gemini.kwargs["skip_cost_guard"] is True
+    assert "Informacion operacional sintetica" in gemini.kwargs["user_message"]
